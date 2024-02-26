@@ -1,119 +1,95 @@
+
+// for cURL
+#include "curl/curl.h"
+
+// for OpenCV2
 #include <opencv2/opencv.hpp>
-#include <opencv2/ccalib/omnidir.hpp>
-#include <iostream>
-#include <vector>
-#include <string>
-#include <algorithm>
-#include <experimental/filesystem>
 
-namespace fs = std::experimental::filesystem;
+// receive buffer for cURL
+#define BUF_SIZE	(512 * 1024)
+char recv_buf[BUF_SIZE + 1];
+int  recv_buf_size = 0;
 
-std::vector<std::string> fileList(std::string dir, std::string ext = "")
+// data receive callback function
+size_t recv_data(void* buffer, size_t size, size_t nmemb, void* userdata)
 {
-    //対象のディレクトリ直下のファイルのリスト取得
-    std::vector<std::string> flist;
-    for ( auto ent : fs::directory_iterator(dir) ) {
-        if(!fs::is_directory(ent)){
-            std::string path = ent.path().string();
-            if(ext != ""){
-                auto pos = path.rfind(ext);
-                if(pos == std::string::npos)
-                    continue;
-                if(pos + ext.length() != path.length())
-                    continue;
-            }
-            flist.push_back(path);
-        }
-    }
-    std::sort(flist.begin(), flist.end());
-    return flist;
+	printf("recv_data\n");
+
+	size_t segsize = size * nmemb;
+
+	if (recv_buf_size + segsize > BUF_SIZE) {
+		*(int*)userdata = 1;
+		return 0;
+	}
+
+	memcpy((recv_buf + recv_buf_size), buffer, segsize);
+	recv_buf_size += segsize;
+	recv_buf[recv_buf_size] = 0;
+
+	return segsize;
 }
 
-int main(){
+cv::Mat get_jpeg_image(const char* url)
+{
+	CURL* curl = NULL;
+	CURLcode res;
+	int      err = 0;
 
-    std::string imgDir = "./img";   //チェスボード画像を格納しているディレクトリ
-    cv::Size patternSize(7,10);     //チェスボードの交点数
-    cv::Size imgSize;
+	curl = curl_easy_init();
+	if (!curl) {
+		printf("curl_easy_init() failed...\n");
+		return cv::Mat();
+	}
 
-    std::vector<std::vector<cv::Point2f>> imgPoints;    //画像上のチェスボードの交点の座標
-    std::vector<std::vector<cv::Point3f>> objPoints;    //3次元空間でのチェスボードの交点の座標
+	curl_easy_setopt(curl, CURLOPT_URL, url);
+	curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*)&err); // userdata
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, recv_data); //
 
-    //チェスボード検出
-    std::vector<std::string> imgList = fileList(imgDir, ".jpg");
-    for(std::string imgPath : imgList){
-        std::cout << imgPath << " ...";
-        cv::Mat img = cv::imread(imgPath);
-        std::vector<cv::Point2f> corners;
-        bool found = cv::findChessboardCorners(img, patternSize, corners, cv::CALIB_CB_ADAPTIVE_THRESH + cv::CALIB_CB_NORMALIZE_IMAGE + cv::CALIB_CB_FAST_CHECK + cv::CALIB_CB_FILTER_QUADS);
-        if(!found){
-            std::cout << " not found" << std::endl;
-        }
-        imgPoints.push_back(corners);
-        std::cout << " found" << std::endl;
-        imgSize = img.size();
-    }
-    
-    //チェスボードの三次元座標
-    for(int i = 0; i < imgPoints.size(); i ++){
-        std::vector<cv::Point3f> obj;
-        for(int c = 0; c < patternSize.height; c ++){
-            for(int r = 0; r < patternSize.width; r ++){
-                float x = r*24.0; //mm
-                float y = c*24.0; //mm
-                float z = 0.0;
-                obj.push_back(cv::Point3f(x,y,z));
-            }
-        }
-        objPoints.push_back(obj);
-    }
-    
-    //キャリブレーション
-    std::cout << "cv::calibrateCamera" << std::endl;
-    cv::Mat persK, persD, persR, persT;
-    std::string persFile = "./perspectiveCalibrate.xml";
-    double persRMS = cv::calibrateCamera(objPoints, imgPoints, imgSize, persK, persD, persR, persT);
-    cv::FileStorage persxml(persFile, cv::FileStorage::WRITE);
-    cv::write(persxml, "RMS", persRMS);
-    cv::write(persxml, "K", persK);
-    cv::write(persxml, "D", persD);
-    persxml.release();
-    
-    std::cout << "cv::fisheye::calibrate" << std::endl;
-    cv::Mat fishK, fishD, fishR, fishT;
-    std::string fishFile = "./fisheyeCalibrate.xml";
-    int fisheyeFlag = cv::fisheye::CALIB_RECOMPUTE_EXTRINSIC | cv::fisheye::CALIB_FIX_SKEW;
-    double fishRMS = cv::fisheye::calibrate(objPoints, imgPoints, imgSize, fishK, fishD, fishR, fishT, fisheyeFlag);
-    cv::FileStorage fishxml(fishFile, cv::FileStorage::WRITE);
-    cv::write(fishxml, "RMS", fishRMS);
-    cv::write(fishxml, "K", fishK);
-    cv::write(fishxml, "D", fishD);
-    fishxml.release();
-    
-    std::cout << "cv::omnidir::calibrate" << std::endl;
-    cv::Mat omniK, omniXi, omniD, omniR, omniT, idx;
-    std::string omniFile = "./omnidirectionalCalibrate.xml";
-    cv::TermCriteria critia(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 200, 0.0001);
-    double omniRMS = cv::omnidir::calibrate(objPoints, imgPoints, imgSize, omniK, omniXi, omniD, omniR, omniT, 0, critia, idx);
-    cv::FileStorage omnixml(omniFile, cv::FileStorage::WRITE);
-    cv::write(omnixml, "RMS", omniRMS);
-    cv::write(omnixml, "K", omniK);
-    cv::write(omnixml, "Xi", omniXi);
-    cv::write(omnixml, "D", omniD);
-    omnixml.release();
-    
-    //Undistort
-    std::cout << "Undistort" << std::endl;
-    cv::Mat distorted = cv::imread("./photo.jpg");
-    cv::Mat undistorted, fishUndistorted, omniUndistorted;
-    
-    cv::undistort(distorted, undistorted, persK, persD);
-    cv::fisheye::undistortImage(distorted, fishUndistorted, fishK, fishD);
-    cv::omnidir::undistortImage(distorted, omniUndistorted, omniK, omniD, omniXi, cv::omnidir::RECTIFY_PERSPECTIVE);
-    
-    cv::imwrite("./undistort.jpg", undistorted);
-    cv::imwrite("./undistort_fisheye.jpg", fishUndistorted);
-    cv::imwrite("./undistort_omnidir.jpg", omniUndistorted);
+	res = curl_easy_perform(curl);
+	printf("res=%d (write_error = %d)\n", res, err);
 
-    
-    return 0;
+	if (res == CURLE_OK) 
+	{
+		/* extract the content-type */
+		char* ct = NULL;
+		res = curl_easy_getinfo(curl, CURLINFO_CONTENT_TYPE, &ct);
+		if (!res && ct) {
+			printf("Content-Type: %s\n", ct);
+		}
+	}
+	else 
+	{
+		printf("curl_easy_perform() failed...%s\n", curl_easy_strerror(res));
+		return cv::Mat();
+	}
+
+	curl_easy_cleanup(curl);
+
+	cv::Mat recv_data;
+	recv_data.create(cv::Size(recv_buf_size, 1), CV_8UC1);
+	memcpy(recv_data.data, recv_buf, recv_buf_size);
+
+	return recv_data;
+}
+
+int mainmainmain(int argc, char* argv[])
+{
+	cv::Mat recv_data;
+
+	// HTTPでJPEG画像を取得する
+	recv_data = get_jpeg_image("https://i.pinimg.com/564x/c8/d2/c7/c8d2c76d9785431a7026d3be400c469a.jpg");
+	if (recv_data.empty()) {
+		printf("get_jpeg_image() failed...\n");
+		return -1;
+	}
+
+	// JPEGデータをビットマップにデコードする
+	//cv::Mat raw_jpeg_data(1, recv_buf_size, CV_8UC1, recv_buf);
+	cv::Mat image = cv::imdecode(recv_data, -1);
+
+	// 表示
+	cv::imshow("jpeg image", image);
+	cv::waitKey(0);
+
+	return 0;
 }
