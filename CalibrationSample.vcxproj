@@ -136,6 +136,10 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="CalibrationSample.cpp" />
+    <ClCompile Include="Circle.cpp" />
+    <ClCompile Include="Circle2.cpp" />
+    <ClCompile Include="Circle3.cpp" />
+    <ClCompile Include="Circle4.cpp" />
     <ClCompile Include="CurlTest.cpp" />
     <ClCompile Include="FileName.cpp" />
   </ItemGroup>

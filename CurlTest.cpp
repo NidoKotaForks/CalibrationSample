@@ -71,7 +71,7 @@ public:
     }
 };
 
-int main(void)
+int mainmainmain(void)
 {
     cv::Mat* mat = static_cast<cv::Mat*>(Curl::Img("https://i.pinimg.com/564x/c8/d2/c7/c8d2c76d9785431a7026d3be400c469a.jpg", 10));
 

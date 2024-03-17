@@ -89,10 +89,28 @@ public:
 
         cv::Mat cameraMatrix;
         cv::Mat distCoeffs;
-        cv::Mat persR;
-        cv::Mat persT;
-        double persRMS = cv::calibrateCamera(_objPoints, _imgPoints, _imgSize, cameraMatrix, distCoeffs, persR, persT);
-        cv::initUndistortRectifyMap(cameraMatrix, distCoeffs, cv::Mat(), cameraMatrix, _imgSize, CV_32F, _map1, _map2);
+        cv::Mat R;
+        cv::Mat T;
+
+        try
+        {
+            double persRMS = cv::calibrateCamera(_objPoints, _imgPoints, _imgSize, cameraMatrix, distCoeffs, R, T);
+            cv::initUndistortRectifyMap(cameraMatrix, distCoeffs, cv::Mat(), cameraMatrix, _imgSize, CV_32F, _map1, _map2);
+        }
+        catch (std::exception& e)
+        {
+            std::cout << e.what();
+        }
+
+        //try 
+        //{
+        //    double fishRMS = cv::fisheye::calibrate(_objPoints, _imgPoints, _imgSize, cameraMatrix, distCoeffs, R, T);
+        //    cv::fisheye::initUndistortRectifyMap(cameraMatrix, distCoeffs, cv::Mat(), cameraMatrix, _imgSize, CV_32F, _map1, _map2);
+        //}
+        //catch (std::exception& e) 
+        //{
+        //    std::cout << e.what();
+        //}
 
         _valid = true;
     }
@@ -104,10 +122,10 @@ public:
     }
 };
 
-int mainmainmain(void)
+int mainmainmainmain(void)
 {
     //cv::Mat src = cv::imread("C:/Users/nidok/Desktop/Unity/firework2/Assets/img/img2_1.jpg");
-    cv::Mat src = cv::imread("C:/Users/nidok/Desktop/Unity/firework2/Assets/img/squ.jpg");
+    cv::Mat src = cv::imread("C:/Users/nidok/Desktop/Unity/firework2/Assets/Images/3/capture_7.jpeg");
     //cv::Mat src = cv::imread("C:/Users/nidok/Desktop/Unity/firework2/Assets/img/photomini.jpg");
 
     //cv::cvtColor(mat, mat, cv::COLOR_BGR2HSV);
